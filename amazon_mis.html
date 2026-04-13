@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PG Beauty — Amazon MIS | Week 15</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f1f5f9; color: #1e293b; }
+
+  /* HEADER */
+  .header { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; padding: 24px 32px; display:flex; justify-content:space-between; align-items:center; }
+  .header-brand { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  .header-sub { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+  .header-wk { text-align:right; }
+  .wk-badge { background: #6366f1; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; display:inline-block; }
+  .updated { font-size: 11px; color: #94a3b8; margin-top: 6px; }
+
+  /* SECTIONS */
+  .section { padding: 28px 32px; }
+  .section-title { font-size: 18px; font-weight: 700; color: #1e293b; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 2px solid #e2e8f0; display:flex; align-items:center; gap:8px; }
+
+  /* KPI SUMMARY */
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-bottom: 0; }
+  .sum-card { background: white; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
+
+  /* TABLE */
+  .table-wrapper { overflow-x: auto; overflow-y: auto; max-height: 600px; border-radius: 12px; box-shadow: 0 1px 8px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; background: white; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  thead th { background: #1e293b; color: white; padding: 10px 12px; text-align: center; white-space: nowrap; position: sticky; top: 0; z-index: 10; }
+  thead th.wk-header { min-width: 90px; }
+  .wk-date { font-size: 10px; color: #94a3b8; font-weight: 400; }
+  .sticky-col { position: sticky; left: 0; background: #f8fafc; z-index: 5; font-weight: 500; color: #374151; min-width: 180px; }
+  .trend-col { min-width: 40px; text-align:center; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; text-align: center; white-space: nowrap; }
+  td.metric-name { text-align: left; border-right: 1px solid #e2e8f0; }
+  tr:hover td { background: rgba(99,102,241,0.04); }
+  .group-header td { background: #f1f5f9; color: #475569; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 6px 12px; }
+
+  /* TRENDS */
+  .trends-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .trend-card { background: white; border-radius: 10px; padding: 20px; border-left: 4px solid; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .trend-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: #1e293b; }
+  .trend-card ul { list-style: none; }
+  .trend-card li { font-size: 13px; color: #475569; padding: 5px 0; border-bottom: 1px solid #f1f5f9; line-height: 1.5; }
+  .trend-card li:last-child { border-bottom: none; }
+
+  /* SWOT */
+  .swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .swot-box { border-radius: 10px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .swot-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .swot-box ul { list-style: none; }
+  .swot-box li { font-size: 13px; padding: 5px 0; border-bottom: 1px solid rgba(0,0,0,0.05); padding-left: 14px; position: relative; line-height: 1.5; }
+  .swot-box li::before { content: "•"; position: absolute; left: 0; font-weight: 700; }
+  .swot-box li:last-child { border-bottom: none; }
+
+  /* ACTIONS */
+  .action-card { border-radius: 10px; padding: 20px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .action-title { font-size: 14px; font-weight: 700; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .action-list { list-style: none; }
+  .action-list li { font-size: 13px; padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,0.06); display: flex; align-items: flex-start; gap: 10px; line-height: 1.5; color: #374151; }
+  .action-list li:last-child { border-bottom: none; }
+  .priority-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; color: white; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+
+  /* FOOTER */
+  .footer { text-align: center; padding: 24px; color: #94a3b8; font-size: 12px; border-top: 1px solid #e2e8f0; }
+
+  @media (max-width: 768px) {
+    .section { padding: 16px; }
+    .swot-grid { grid-template-columns: 1fr; }
+    .header { flex-direction: column; gap: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-brand">PG Beauty — Amazon MIS Dashboard</div>
+    <div class="header-sub">Brand: Parul Garg Beauty &nbsp;|&nbsp; Marketplace: Amazon India &nbsp;|&nbsp; Weekly Business Review</div>
+  </div>
+  <div class="header-wk">
+    <div class="wk-badge">Week 15 &nbsp;·&nbsp; 2026-04-11</div>
+    <div class="updated">Updated: 13 Apr 2026, 21:21</div>
+  </div>
+</div>
+
+<!-- LATEST WEEK SNAPSHOT -->
+<div class="section" style="background:#fff;border-bottom:1px solid #e2e8f0;">
+  <div class="section-title">⚡ Week 15 Snapshot</div>
+  <div class="summary-grid"><div class="sum-card">
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em">GMS</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;margin-top:4px">₹287.0K</div>
+          <div style="font-size:11px;color:#ef4444;margin-top:2px">-62.3% WoW</div>
+        </div><div class="sum-card">
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em">OPS</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;margin-top:4px">₹0</div>
+          
+        </div><div class="sum-card">
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em">Served Units</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;margin-top:4px">1,838</div>
+          <div style="font-size:11px;color:#22c55e;margin-top:2px">+54.2% WoW</div>
+        </div><div class="sum-card">
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em">Conversion</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;margin-top:4px">3.5%</div>
+          <div style="font-size:11px;color:#22c55e;margin-top:2px">+14.0% WoW</div>
+        </div><div class="sum-card">
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em">IC Box PC</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;margin-top:4px">67.9%</div>
+          <div style="font-size:11px;color:#ef4444;margin-top:2px">-15.2% WoW</div>
+        </div><div class="sum-card">
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em">Ad Spend</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;margin-top:4px">₹77.9K</div>
+          <div style="font-size:11px;color:#ef4444;margin-top:2px">-43.4% WoW</div>
+        </div><div class="sum-card">
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em">ACOS</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;margin-top:4px">79.2%</div>
+          <div style="font-size:11px;color:#ef4444;margin-top:2px">+93.0% WoW</div>
+        </div><div class="sum-card">
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em">OOS</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;margin-top:4px">21.4%</div>
+          <div style="font-size:11px;color:#ef4444;margin-top:2px">+97.0% WoW</div>
+        </div><div class="sum-card">
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em">Buyable Offers</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;margin-top:4px">372</div>
+          <div style="font-size:11px;color:#22c55e;margin-top:2px">+235.1% WoW</div>
+        </div><div class="sum-card">
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em">FBA BB GV%</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;margin-top:4px">64.8%</div>
+          <div style="font-size:11px;color:#ef4444;margin-top:2px">-4.3% WoW</div>
+        </div></div>
+</div>
+
+<!-- DATA TABLE -->
+<div class="section">
+  <div class="section-title">📊 All Metrics — All Weeks (Scroll → and ↓)</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th class="sticky-col" style="text-align:left;position:sticky;left:0;z-index:15;background:#1e293b">Metric</th>
+          <th style="min-width:40px">Trend</th>
+          <th class="wk-header">Wk 2<br><span class="wk-date">2026-01-10</span></th><th class="wk-header">Wk 9<br><span class="wk-date">2026-02-28</span></th><th class="wk-header">Wk 10<br><span class="wk-date">2026-03-07</span></th><th class="wk-header">Wk 11<br><span class="wk-date">2026-03-14</span></th><th class="wk-header">Wk 12<br><span class="wk-date">2026-03-21</span></th><th class="wk-header">Wk 13<br><span class="wk-date">2026-03-28</span></th><th class="wk-header">Wk 14<br><span class="wk-date">2026-04-04</span></th><th class="wk-header">Wk 15<br><span class="wk-date">2026-04-11</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="group-header"><td colspan="10">Sales & Revenue</td></tr><tr>
+              <td class="metric-name sticky-col">GMS</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(209,221,175,0.25);">₹861.0K</td><td style="background:rgba(201,229,175,0.25);">₹956.5K</td><td style="background:rgba(195,235,175,0.25);">₹10.3L</td><td style="background:rgba(254,176,175,0.25);">₹306.8K</td><td style="background:rgba(217,213,175,0.25);">₹761.9K</td><td style="background:rgba(255,175,175,0.25);">₹287.0K</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">OPS</td>
+              <td class="trend-col"><span style="color:#94a3b8;font-weight:700">—</span></td>
+              <td style="">—</td><td style="">₹0</td><td style="">₹0</td><td style="">₹0</td><td style="">₹0</td><td style="">₹0</td><td style="">₹0</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">ASP</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▼</span></td>
+              <td style="">—</td><td style="background:rgba(207,223,175,0.25);">₹637</td><td style="background:rgba(211,219,175,0.25);">₹627</td><td style="background:rgba(195,235,175,0.25);">₹663</td><td style="background:rgba(234,196,175,0.25);">₹575</td><td style="background:rgba(203,227,175,0.25);">₹645</td><td style="background:rgba(255,175,175,0.25);">₹526</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">Served GMS (WBR)</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="background:rgba(253,177,175,0.25);">₹755.0K</td><td style="background:rgba(195,235,175,0.25);">₹38.7L</td><td style="">—</td><td style="">—</td><td style="background:rgba(253,177,175,0.25);">₹778.4K</td><td style="background:rgba(253,177,175,0.25);">₹761.9K</td><td style="background:rgba(255,175,175,0.25);">₹644.1K</td><td style="font-weight:700;background:rgba(247,183,175,0.25);">₹10.9L</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">Served Units</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="background:rgba(254,176,175,0.25);">1,299</td><td style="background:rgba(195,235,175,0.25);">6,445</td><td style="">—</td><td style="">—</td><td style="background:rgba(255,175,175,0.25);">1,278</td><td style="background:rgba(254,176,175,0.25);">1,324</td><td style="background:rgba(255,175,175,0.25);">1,192</td><td style="font-weight:700;background:rgba(248,182,175,0.25);">1,838</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">OPS/GMS Conv</td>
+              <td class="trend-col"><span style="color:#94a3b8;font-weight:700">—</span></td>
+              <td style="">—</td><td style="background:rgba(243,187,175,0.25);">90.1%</td><td style="background:rgba(255,175,175,0.25);">85.9%</td><td style="background:rgba(232,198,175,0.25);">93.7%</td><td style="background:rgba(195,235,175,0.25);">105.5%</td><td style="background:rgba(217,213,175,0.25);">98.6%</td><td style="background:rgba(230,200,175,0.25);">94.1%</td><td style="font-weight:700;">—</td>
+            </tr><tr class="group-header"><td colspan="10">Traffic & Conversion</td></tr><tr>
+              <td class="metric-name sticky-col">Total GV</td>
+              <td class="trend-col"><span style="color:#94a3b8;font-weight:700">—</span></td>
+              <td style="background:rgba(195,235,175,0.25);">51,832</td><td style="background:rgba(255,175,175,0.25);">0</td><td style="background:rgba(255,175,175,0.25);">0</td><td style="background:rgba(255,175,175,0.25);">0</td><td style="background:rgba(255,175,175,0.25);">0</td><td style="background:rgba(255,175,175,0.25);">0</td><td style="background:rgba(255,175,175,0.25);">0</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">Conversion %</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(255,175,175,0.25);">2.8%</td><td style="background:rgba(208,222,175,0.25);">3.3%</td><td style="background:rgba(246,184,175,0.25);">2.9%</td><td style="background:rgba(219,211,175,0.25);">3.2%</td><td style="background:rgba(232,198,175,0.25);">3.1%</td><td style="background:rgba(195,235,175,0.25);">3.5%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">IC Box PC %</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(205,225,175,0.25);">72.8%</td><td style="background:rgba(206,224,175,0.25);">72.4%</td><td style="background:rgba(209,221,175,0.25);">69.5%</td><td style="background:rgba(255,175,175,0.25);">34.8%</td><td style="background:rgba(195,235,175,0.25);">80.1%</td><td style="background:rgba(212,218,175,0.25);">67.9%</td><td style="font-weight:700;">—</td>
+            </tr><tr class="group-header"><td colspan="10">Selection / Listing</td></tr><tr>
+              <td class="metric-name sticky-col">Buyable Offers</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(249,181,175,0.25);">123</td><td style="background:rgba(250,180,175,0.25);">118</td><td style="background:rgba(251,179,175,0.25);">114</td><td style="background:rgba(255,175,175,0.25);">93</td><td style="background:rgba(252,178,175,0.25);">111</td><td style="background:rgba(195,235,175,0.25);">372</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">FBA Offers</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(251,179,175,0.25);">67</td><td style="background:rgba(252,178,175,0.25);">63</td><td style="background:rgba(253,177,175,0.25);">62</td><td style="background:rgba(255,175,175,0.25);">55</td><td style="background:rgba(253,177,175,0.25);">61</td><td style="background:rgba(195,235,175,0.25);">208</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">FC Offers</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(253,177,175,0.25);">61</td><td style="background:rgba(254,176,175,0.25);">59</td><td style="background:rgba(255,175,175,0.25);">57</td><td style="background:rgba(255,175,175,0.25);">55</td><td style="background:rgba(255,175,175,0.25);">57</td><td style="background:rgba(195,235,175,0.25);">208</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">FTAC Offers</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(249,181,175,0.25);">122</td><td style="background:rgba(250,180,175,0.25);">117</td><td style="background:rgba(251,179,175,0.25);">112</td><td style="background:rgba(255,175,175,0.25);">93</td><td style="background:rgba(252,178,175,0.25);">109</td><td style="background:rgba(195,235,175,0.25);">376</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">AWAS</td>
+              <td class="trend-col"><span style="color:#94a3b8;font-weight:700">—</span></td>
+              <td style="background:rgba(195,235,175,0.25);">131</td><td style="background:rgba(231,199,175,0.25);">116</td><td style="background:rgba(234,196,175,0.25);">115</td><td style="background:rgba(246,184,175,0.25);">110</td><td style="background:rgba(251,179,175,0.25);">108</td><td style="background:rgba(255,175,175,0.25);">106</td><td style="background:rgba(251,179,175,0.25);">108</td><td style="font-weight:700;background:rgba(251,179,175,0.25);">108</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">Buyable Selection (WBR)</td>
+              <td class="trend-col"><span style="color:#94a3b8;font-weight:700">—</span></td>
+              <td style="background:rgba(195,235,175,0.25);">144</td><td style="background:rgba(233,197,175,0.25);">123</td><td style="">—</td><td style="">—</td><td style="background:rgba(252,178,175,0.25);">112</td><td style="background:rgba(254,176,175,0.25);">111</td><td style="background:rgba(255,175,175,0.25);">110</td><td style="font-weight:700;background:rgba(255,175,175,0.25);">110</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">FC FTAC</td>
+              <td class="trend-col"><span style="color:#94a3b8;font-weight:700">—</span></td>
+              <td style="background:rgba(195,235,175,0.25);">66</td><td style="background:rgba(229,201,175,0.25);">61</td><td style="background:rgba(242,188,175,0.25);">59</td><td style="background:rgba(255,175,175,0.25);">57</td><td style="background:rgba(255,175,175,0.25);">57</td><td style="background:rgba(255,175,175,0.25);">57</td><td style="background:rgba(249,181,175,0.25);">58</td><td style="font-weight:700;background:rgba(249,181,175,0.25);">58</td>
+            </tr><tr class="group-header"><td colspan="10">Buy Box</td></tr><tr>
+              <td class="metric-name sticky-col">FBA BB GV%</td>
+              <td class="trend-col"><span style="color:#94a3b8;font-weight:700">—</span></td>
+              <td style="">—</td><td style="background:rgba(255,175,175,0.25);">61.3%</td><td style="background:rgba(255,175,175,0.25);">61.4%</td><td style="background:rgba(221,209,175,0.25);">65.0%</td><td style="background:rgba(214,216,175,0.25);">65.8%</td><td style="background:rgba(195,235,175,0.25);">67.7%</td><td style="background:rgba(223,207,175,0.25);">64.8%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">FC BB GV%</td>
+              <td class="trend-col"><span style="color:#94a3b8;font-weight:700">—</span></td>
+              <td style="">—</td><td style="background:rgba(255,175,175,0.25);">60.6%</td><td style="background:rgba(251,179,175,0.25);">61.2%</td><td style="background:rgba(218,212,175,0.25);">64.9%</td><td style="background:rgba(209,221,175,0.25);">65.8%</td><td style="background:rgba(195,235,175,0.25);">67.3%</td><td style="background:rgba(218,212,175,0.25);">64.8%</td><td style="font-weight:700;">—</td>
+            </tr><tr class="group-header"><td colspan="10">Marketing / Ads</td></tr><tr>
+              <td class="metric-name sticky-col">Ad Spend</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▼</span></td>
+              <td style="">—</td><td style="background:rgba(228,202,175,0.25);">₹140.6K</td><td style="background:rgba(207,223,175,0.25);">₹189.4K</td><td style="background:rgba(195,235,175,0.25);">₹216.2K</td><td style="background:rgba(255,175,175,0.25);">₹76.4K</td><td style="background:rgba(229,201,175,0.25);">₹137.8K</td><td style="background:rgba(255,175,175,0.25);">₹77.9K</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">Ad Spend (WBR)</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="background:rgba(251,179,175,0.25);">₹123.5K</td><td style="background:rgba(195,235,175,0.25);">₹545.2K</td><td style="">—</td><td style="">—</td><td style="background:rgba(247,183,175,0.25);">₹150.5K</td><td style="background:rgba(252,178,175,0.25);">₹112.5K</td><td style="background:rgba(255,175,175,0.25);">₹87.2K</td><td style="font-weight:700;background:rgba(245,185,175,0.25);">₹171.1K</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">ACOS</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(195,235,175,0.25);">33.6%</td><td style="background:rgba(196,234,175,0.25);">34.4%</td><td style="background:rgba(201,229,175,0.25);">40.4%</td><td style="background:rgba(255,175,175,0.25);">106.4%</td><td style="background:rgba(202,228,175,0.25);">41.0%</td><td style="background:rgba(233,197,175,0.25);">79.2%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">SP Spend %</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(255,175,175,0.25);">16.3%</td><td style="background:rgba(236,194,175,0.25);">19.8%</td><td style="background:rgba(230,200,175,0.25);">21.0%</td><td style="background:rgba(208,222,175,0.25);">24.9%</td><td style="background:rgba(246,184,175,0.25);">18.1%</td><td style="background:rgba(195,235,175,0.25);">27.1%</td><td style="font-weight:700;">—</td>
+            </tr><tr class="group-header"><td colspan="10">Deals & Promotions</td></tr><tr>
+              <td class="metric-name sticky-col">Deal OPS %</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▼</span></td>
+              <td style="">—</td><td style="background:rgba(199,231,175,0.25);">7.7%</td><td style="background:rgba(219,211,175,0.25);">5.0%</td><td style="background:rgba(195,235,175,0.25);">8.1%</td><td style="background:rgba(255,175,175,0.25);">0.0%</td><td style="background:rgba(220,210,175,0.25);">4.8%</td><td style="background:rgba(255,175,175,0.25);">0.0%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">Coupon OPS %</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▼</span></td>
+              <td style="">—</td><td style="background:rgba(255,175,175,0.25);">0.0%</td><td style="background:rgba(255,175,175,0.25);">0.0%</td><td style="background:rgba(255,175,175,0.25);">0.0%</td><td style="background:rgba(219,211,175,0.25);">2.6%</td><td style="background:rgba(195,235,175,0.25);">4.3%</td><td style="background:rgba(255,175,175,0.25);">0.0%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">BxGy Coverage</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▼</span></td>
+              <td style="">—</td><td style="background:rgba(195,235,175,0.25);">80.6%</td><td style="background:rgba(196,234,175,0.25);">79.3%</td><td style="background:rgba(200,230,175,0.25);">74.2%</td><td style="background:rgba(255,175,175,0.25);">0.0%</td><td style="background:rgba(202,228,175,0.25);">71.4%</td><td style="background:rgba(255,175,175,0.25);">0.0%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">BxGy Share</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▼</span></td>
+              <td style="">—</td><td style="background:rgba(195,235,175,0.25);">13.0%</td><td style="background:rgba(203,227,175,0.25);">11.5%</td><td style="background:rgba(208,222,175,0.25);">10.2%</td><td style="background:rgba(255,175,175,0.25);">0.0%</td><td style="background:rgba(218,212,175,0.25);">8.1%</td><td style="background:rgba(255,175,175,0.25);">0.0%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">Total Deal OPS (WBR)</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▼</span></td>
+              <td style="">—</td><td style="background:rgba(195,235,175,0.25);">₹469.8K</td><td style="">—</td><td style="">—</td><td style="background:rgba(248,182,175,0.25);">₹64.0K</td><td style="background:rgba(251,179,175,0.25);">₹37.2K</td><td style="background:rgba(252,178,175,0.25);">₹32.7K</td><td style="font-weight:700;background:rgba(255,175,175,0.25);">₹4.5K</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">BxGy OPS (WBR)</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="background:rgba(255,175,175,0.25);">₹69.7K</td><td style="background:rgba(195,235,175,0.25);">₹470.4K</td><td style="">—</td><td style="">—</td><td style="background:rgba(249,181,175,0.25);">₹108.9K</td><td style="background:rgba(255,175,175,0.25);">₹67.1K</td><td style="background:rgba(251,179,175,0.25);">₹99.7K</td><td style="font-weight:700;background:rgba(248,182,175,0.25);">₹114.9K</td>
+            </tr><tr class="group-header"><td colspan="10">Operations / Fulfilment</td></tr><tr>
+              <td class="metric-name sticky-col">FC Units %</td>
+              <td class="trend-col"><span style="color:#94a3b8;font-weight:700">—</span></td>
+              <td style="">—</td><td style="background:rgba(236,194,175,0.25);">75.8%</td><td style="background:rgba(239,191,175,0.25);">74.9%</td><td style="background:rgba(214,216,175,0.25);">82.1%</td><td style="background:rgba(255,175,175,0.25);">70.2%</td><td style="background:rgba(195,235,175,0.25);">87.2%</td><td style="background:rgba(234,196,175,0.25);">76.2%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">FBA Units %</td>
+              <td class="trend-col"><span style="color:#94a3b8;font-weight:700">—</span></td>
+              <td style="">—</td><td style="background:rgba(234,196,175,0.25);">76.4%</td><td style="background:rgba(237,193,175,0.25);">75.4%</td><td style="background:rgba(213,217,175,0.25);">82.3%</td><td style="background:rgba(255,175,175,0.25);">70.2%</td><td style="background:rgba(195,235,175,0.25);">87.4%</td><td style="background:rgba(235,195,175,0.25);">76.2%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">FC OOS %</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(251,179,175,0.25);">13.0%</td><td style="background:rgba(195,235,175,0.25);">2.8%</td><td style="background:rgba(198,232,175,0.25);">3.3%</td><td style="background:rgba(208,222,175,0.25);">5.2%</td><td style="background:rgba(225,205,175,0.25);">8.3%</td><td style="background:rgba(255,175,175,0.25);">13.8%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">EF OOS %</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(228,202,175,0.25);">10.7%</td><td style="background:rgba(229,201,175,0.25);">11.1%</td><td style="background:rgba(233,197,175,0.25);">12.2%</td><td style="background:rgba(206,224,175,0.25);">4.7%</td><td style="background:rgba(255,175,175,0.25);">18.4%</td><td style="background:rgba(195,235,175,0.25);">1.8%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">Overall OOS %</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▲</span></td>
+              <td style="">—</td><td style="background:rgba(232,198,175,0.25);">15.0%</td><td style="background:rgba(197,233,175,0.25);">5.5%</td><td style="background:rgba(195,235,175,0.25);">5.0%</td><td style="background:rgba(253,177,175,0.25);">20.8%</td><td style="background:rgba(217,213,175,0.25);">10.8%</td><td style="background:rgba(255,175,175,0.25);">21.4%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">SCR</td>
+              <td class="trend-col"><span style="color:#94a3b8;font-weight:700">—</span></td>
+              <td style="">—</td><td style="background:rgba(255,175,175,0.25);">13</td><td style="background:rgba(255,175,175,0.25);">13</td><td style="background:rgba(195,235,175,0.25);">14</td><td style="background:rgba(195,235,175,0.25);">14</td><td style="background:rgba(195,235,175,0.25);">14</td><td style="">—</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">RIS %</td>
+              <td class="trend-col"><span style="color:#ef4444;font-weight:700">▼</span></td>
+              <td style="">—</td><td style="background:rgba(206,224,175,0.25);">56.2%</td><td style="background:rgba(195,235,175,0.25);">58.8%</td><td style="background:rgba(200,230,175,0.25);">57.6%</td><td style="background:rgba(254,176,175,0.25);">44.1%</td><td style="background:rgba(239,191,175,0.25);">47.9%</td><td style="background:rgba(255,175,175,0.25);">43.7%</td><td style="font-weight:700;">—</td>
+            </tr><tr>
+              <td class="metric-name sticky-col">Prime OPS (WBR)</td>
+              <td class="trend-col"><span style="color:#22c55e;font-weight:700">▲</span></td>
+              <td style="background:rgba(255,175,175,0.25);">₹389.8K</td><td style="background:rgba(195,235,175,0.25);">₹20.9L</td><td style="">—</td><td style="">—</td><td style="background:rgba(252,178,175,0.25);">₹462.7K</td><td style="background:rgba(255,175,175,0.25);">₹389.2K</td><td style="background:rgba(255,175,175,0.25);">₹374.2K</td><td style="font-weight:700;background:rgba(248,182,175,0.25);">₹595.8K</td>
+            </tr>
+      </tbody>
+    </table>
+  </div>
+  <div style="font-size:11px;color:#94a3b8;margin-top:8px">
+    🟢 Green = relatively better performance &nbsp;|&nbsp; 🔴 Red = relatively weaker &nbsp;|&nbsp; Trend: ▲ rising · ▼ declining · — flat &nbsp;|&nbsp; Heat map is relative within each metric row.
+  </div>
+</div>
+
+<!-- TREND ANALYSIS -->
+<div class="section" style="background:#f8fafc;">
+  <div class="section-title">📈 Key Trend Analysis (Last 4–6 Weeks)</div>
+  
+    <div class="trends-grid">
+      <div class="trend-card" style="border-left-color:#6366f1">
+          <div class="trend-title">📊 Sales Performance</div>
+          <ul><li>GMS ₹287.0K — ▼ 62.3% WoW (prev ₹761.9K)</li><li>ASP trend: FLAT — latest ₹526</li><li>Served Units latest Wk: 1,838 | Trend: UP</li></ul>
+        </div>
+      <div class="trend-card" style="border-left-color:#f59e0b">
+          <div class="trend-title">⚙️ Operations & Fulfilment</div>
+          <ul><li>Overall OOS: 21.4% — trend UP ⚠ needs attention</li><li>FC OOS: 13.8% — ▲ worsening</li><li>FBA Fulfilment mix: 76.2% — trend FLAT</li><li>Seller Cancel Rate (SCR): 14 (target <5)</li><li>RIS%: 43.7% — ▼ low FC stock</li></ul>
+        </div>
+      <div class="trend-card" style="border-left-color:#ec4899">
+          <div class="trend-title">📣 Marketing & Ads</div>
+          <ul><li>Ad Spend: ₹77.9K — trend FLAT</li><li>ACOS: 79.2% — trend UP ⚠ above 40%</li><li>IC Box PC (Price Competitiveness): 67.9% — ▼ non-competitive</li><li>FBA Buy Box GV%: 64.8% — moderate</li><li>Conversion Rate: 3.5% — trend UP</li></ul>
+        </div>
+      <div class="trend-card" style="border-left-color:#10b981">
+          <div class="trend-title">📋 Listing Health</div>
+          <ul><li>Buyable Offers: 372 — trend UP </li><li>FBA Offers: 208 — listing health good</li><li>AWAS: 108 — active sellers with strong supply</li><li>BxGy Coverage: 0.0% — expand BxGy eligible SKUs</li></ul>
+        </div>
+    </div>
+</div>
+
+<!-- SWOT -->
+<div class="section">
+  <div class="section-title">🔍 SWOT Analysis</div>
+  <div class="swot-grid">
+      <div class="swot-box" style="border-top:4px solid #22c55e;background:#f0fdf4">
+          <div class="swot-title" style="color:#22c55e">Strengths</div>
+          <ul></ul>
+        </div>
+      <div class="swot-box" style="border-top:4px solid #ef4444;background:#fef2f2">
+          <div class="swot-title" style="color:#ef4444">Weaknesses</div>
+          <ul><li>High ACOS (79.2%) — ad spend efficiency needs optimization</li><li>Overall OOS elevated at 21.4% — lost sales risk</li></ul>
+        </div>
+      <div class="swot-box" style="border-top:4px solid #3b82f6;background:#eff6ff">
+          <div class="swot-title" style="color:#3b82f6">Opportunities</div>
+          <ul><li>Improve keyword targeting and creative to boost GV and conversion</li><li>Reprice non-competitive SKUs to capture more Buy Box</li><li>Launch new SKUs on FBA to grow buyable selection and share</li><li>Strong YoY growth trend — plan inventory to sustain 4,595 units/wk target</li></ul>
+        </div>
+      <div class="swot-box" style="border-top:4px solid #f97316;background:#fff7ed">
+          <div class="swot-title" style="color:#f97316">Threats</div>
+          <ul><li>Rising ad costs (ACOS trend) could erode margin if not managed</li><li>OOS trend worsening — supply chain planning required urgently</li><li>Competitor pricing pressure on non-competitive ASINs</li><li>High SCR (14) risks account health metrics</li></ul>
+        </div>
+    </div>
+</div>
+
+<!-- ACTIONS -->
+<div class="section" style="background:#f8fafc;">
+  <div class="section-title">✅ Week 15 — Summary & Action Points</div>
+  <div style="background:white;border-radius:10px;padding:20px;margin-bottom:20px;box-shadow:0 1px 4px rgba(0,0,0,0.06);border:1px solid #e2e8f0;">
+    <div style="font-size:14px;font-weight:600;margin-bottom:10px;color:#1e293b">Executive Summary — Week 15 (2026-04-11)</div>
+    <p style="font-size:13px;color:#475569;line-height:1.7">
+      PG Beauty recorded GMS of <strong>₹287.0K</strong> in Week 15
+      with a WoW change of <strong>-62.3%</strong>.
+      Served units were <strong>1,838</strong>.
+      Ad spend stood at <strong>₹77.9K</strong> with ACOS of <strong>79.2%</strong>.
+      Buy Box win rate (FBA) is at <strong>64.8%</strong> and
+      overall OOS at <strong>21.4%</strong>.
+      Key risk this week is <strong>elevated ACOS</strong> and <strong>OOS</strong> requiring immediate action.
+    </p>
+  </div>
+  
+    <div class="action-card" style="border-left:4px solid #dc2626;background:#fef2f2">
+          <div class="action-title" style="color:#dc2626">P0 — Critical (Resolve Now)</div>
+          <ul class="action-list"><li><span class="priority-badge" style="background:#dc2626">P0</span> Resolve OOS crisis — Overall OOS at 21.4%. Expedite replenishment PO immediately.</li><li><span class="priority-badge" style="background:#dc2626">P0</span> ACOS at 79.2% — pause non-performing campaigns, review bid strategy.</li></ul>
+        </div>
+    <div class="action-card" style="border-left:4px solid #d97706;background:#fffbeb">
+          <div class="action-title" style="color:#d97706">P1 — High Priority (This Week)</div>
+          <ul class="action-list"><li><span class="priority-badge" style="background:#d97706">P1</span> Price audit — IC Box PC at 67.9%. Identify and reprice non-competitive SKUs.</li></ul>
+        </div>
+    <div class="action-card" style="border-left:4px solid #2563eb;background:#eff6ff">
+          <div class="action-title" style="color:#2563eb">P2 — Normal Priority (Next 2 Weeks)</div>
+          <ul class="action-list"><li><span class="priority-badge" style="background:#2563eb">P2</span> Plan Q2 inventory buys based on YoY growth trend and current RIS levels.</li><li><span class="priority-badge" style="background:#2563eb">P2</span> Expand FBA selection — target adding 5 new FBA-eligible SKUs to improve buyable selection.</li><li><span class="priority-badge" style="background:#2563eb">P2</span> Set up brand store promotions aligned with upcoming seasonal peaks.</li></ul>
+        </div>
+    
+</div>
+
+<div class="footer">
+  PG Beauty Amazon MIS &nbsp;·&nbsp; Auto-generated from weekly WBR & Scorecard data &nbsp;·&nbsp; 13 Apr 2026, 21:21
+  <br>To update: add new Excel file to the folder and run <code>python3 generate_mis.py</code>
+</div>
+
+</body>
+</html>
