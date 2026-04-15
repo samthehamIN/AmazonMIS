@@ -69,7 +69,15 @@ def fmt_pct(v, already_pct=False, decimals=1):
     except: return '—'
 
 def parse_scorecard(filepath):
-    """Parse the detailed scorecard format (WK12/13/14)."""
+    """Parse the detailed scorecard format.
+    Also captures Wk-X'25 columns as last-year (LY) data.
+
+    Returns: (wk_cols, metrics, ly_metrics, ordered_rows)
+      metrics:     {metric_name: {wk: value}}  — name-keyed (first occurrence wins)
+      ly_metrics:  {metric_name: {wk: ly_value}}
+      ordered_rows: list of dicts — one per data row, preserving Excel order
+                    {idx, sr_no, name, wk_data: {wk: val}, ly_data: {wk: val}}
+    """
     wb = openpyxl.load_workbook(filepath, data_only=True)
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
@@ -84,25 +92,48 @@ def parse_scorecard(filepath):
             break
 
     if not header_row:
-        return None, {}
+        return None, {}, {}, []
 
-    # Identify week columns (Wk-N columns)
-    wk_cols = {}
+    # Identify week columns (Wk-N current) and LY columns (Wk-N'25)
+    wk_cols = {}    # wk_num -> col_idx  (current year)
+    ly_cols  = {}   # wk_num -> col_idx  (last year, Wk-N'25)
     for j, h in enumerate(header_row):
-        if h and re.match(r'Wk-(\d+)', str(h)):
-            m = re.match(r'Wk-(\d+)', str(h))
-            wk_cols[int(m.group(1))] = j
+        if not h:
+            continue
+        h_str = str(h)
+        ly_match = re.match(r"Wk-(\d+)'(\d+)", h_str)
+        cur_match = re.match(r'Wk-(\d+)$', h_str)
+        if ly_match:
+            ly_cols[int(ly_match.group(1))] = j
+        elif cur_match:
+            wk_cols[int(cur_match.group(1))] = j
 
-    metrics = {}
-    for row in rows[data_start:]:
+    metrics    = {}   # name-keyed (first-seen wins, for KPI/trend sections)
+    ly_metrics = {}
+    ordered_rows = []
+
+    for idx, row in enumerate(rows[data_start:]):
         metric_name = row[1]
         if not metric_name:
             continue
-        metrics[metric_name] = {}
-        for wk, col in wk_cols.items():
-            metrics[metric_name][wk] = safe_float(row[col])
+        wk_data = {wk: safe_float(row[col]) for wk, col in wk_cols.items()}
+        ly_data  = {wk: safe_float(row[col]) for wk, col in ly_cols.items()} if ly_cols else {}
 
-    return wk_cols, metrics
+        # name-keyed dicts (first occurrence wins to avoid cross-context collisions)
+        if metric_name not in metrics:
+            metrics[metric_name] = wk_data
+        if ly_cols and metric_name not in ly_metrics:
+            ly_metrics[metric_name] = ly_data
+
+        ordered_rows.append({
+            'idx':     idx,
+            'sr_no':   row[0],
+            'name':    metric_name,
+            'wk_data': wk_data,
+            'ly_data': ly_data,
+        })
+
+    return wk_cols, metrics, ly_metrics, ordered_rows
 
 def parse_wbr(filepath):
     """Parse the WBR summary format (WK2/WK15)."""
@@ -152,41 +183,91 @@ def build_weekly_data():
     folder = os.path.dirname(os.path.abspath(__file__))
     files = glob(os.path.join(folder, '*.xlsx'))
 
-    # Unified store: metric_name -> {week -> value}
-    unified = {}
+    # Unified store: metric_name -> {week -> value}  (name-keyed, for KPI/trend)
+    unified    = {}
+    ly_unified = {}
 
-    def merge(metric, wk, val):
+    # Positional store: row_idx -> {wk -> value}  (position-keyed, for full table)
+    # master_rows: authoritative ordered list from the latest file
+    positional  = {}   # row_idx -> {wk: value}
+    ly_positional = {} # row_idx -> {wk: ly_value}
+    master_rows = []   # [{idx, sr_no, name}] from latest (highest-wk) file
+
+    def merge_name(store, metric, wk, val):
         if val is None:
             return
-        if metric not in unified:
-            unified[metric] = {}
-        if wk not in unified[metric]:
-            unified[metric][wk] = val
+        if metric not in store:
+            store[metric] = {}
+        if wk not in store[metric]:
+            store[metric][wk] = val
 
+    def merge_pos(store, row_idx, wk, val):
+        if val is None:
+            return
+        if row_idx not in store:
+            store[row_idx] = {}
+        if wk not in store[row_idx]:
+            store[row_idx][wk] = val
+
+    # Sort files so latest (highest max-week number) is processed last → becomes master
+    file_list = []
     for f in sorted(files):
+        if not os.path.basename(f).startswith('~$'):
+            file_list.append(f)
+
+    latest_file = None
+    latest_max_wk = -1
+
+    for f in file_list:
+        wb  = openpyxl.load_workbook(f, data_only=True)
+        ws  = wb.active
+        hdr = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
+        max_wk = 0
+        for h in hdr:
+            if h:
+                m = re.match(r'Wk-(\d+)$', str(h))
+                if m:
+                    max_wk = max(max_wk, int(m.group(1)))
+        if max_wk > latest_max_wk:
+            latest_max_wk = max_wk
+            latest_file   = f
+
+    for f in file_list:
         basename = os.path.basename(f)
         print(f"Reading: {basename}")
 
-        # Detect format
-        wb = openpyxl.load_workbook(f, data_only=True)
-        ws = wb.active
+        wb  = openpyxl.load_workbook(f, data_only=True)
+        ws  = wb.active
         first_row = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
 
         if first_row[0] and 'WBR Summary' in str(first_row[0]):
-            # WBR format
             metrics = parse_wbr(f)
             if metrics:
                 for m, wk_vals in metrics.items():
                     for wk, val in wk_vals.items():
-                        merge(m, wk, val)
+                        merge_name(unified, m, wk, val)
         else:
-            # Scorecard format
-            _, metrics = parse_scorecard(f)
+            _, metrics, ly_metrics, ordered_rows = parse_scorecard(f)
             for m, wk_vals in metrics.items():
                 for wk, val in wk_vals.items():
-                    merge(m, wk, val)
+                    merge_name(unified, m, wk, val)
+            for m, wk_vals in ly_metrics.items():
+                for wk, val in wk_vals.items():
+                    merge_name(ly_unified, m, wk, val)
 
-    return unified
+            # Positional merge
+            for row in ordered_rows:
+                ri = row['idx']
+                for wk, val in row['wk_data'].items():
+                    merge_pos(positional, ri, wk, val)
+                for wk, val in row['ly_data'].items():
+                    merge_pos(ly_positional, ri, wk, val)
+
+            # Set master_rows from the latest file
+            if f == latest_file:
+                master_rows = ordered_rows
+
+    return unified, ly_unified, positional, ly_positional, master_rows
 
 # ──────────────────────────────────────────────
 # TREND ANALYSIS ENGINE
@@ -223,60 +304,43 @@ def wow_change(unified, metric):
 # HTML GENERATOR
 # ──────────────────────────────────────────────
 
-METRIC_GROUPS = [
-    ("Sales & Revenue", [
-        ("GMS", "GMS", "inr"),
-        ("OPS", "OPS", "inr"),
-        ("ASP", "ASP", "inr"),
-        ("Served GMS", "Served GMS (WBR)", "inr"),
-        ("Served Units", "Served Units", "num"),
-        ("OPS to GMS conversion", "OPS/GMS Conv", "pct"),
-    ]),
-    ("Traffic & Conversion", [
-        ("Total GV", "Total GV", "num"),
-        ("Conversion %", "Conversion %", "pct"),
-        ("GV Conversion", "GV Conv (WBR)", "pct_str"),
-        ("ICPC%", "IC Box PC %", "pct"),
-        ("IC Box PC", "IC Box PC (WBR)", "pct_str"),
-    ]),
-    ("Selection / Listing", [
-        ("Buyable offers", "Buyable Offers", "num"),
-        ("FBA offers", "FBA Offers", "num"),
-        ("FC offers", "FC Offers", "num"),
-        ("FTAC offers", "FTAC Offers", "num"),
-        ("AWAS", "AWAS", "num"),
-        ("Buyable Selection", "Buyable Selection (WBR)", "num"),
-        ("FC FTAC", "FC FTAC", "num"),
-    ]),
-    ("Buy Box", [
-        ("FBA BB GV%", "FBA BB GV%", "pct"),
-        ("FC BB GV%", "FC BB GV%", "pct"),
-    ]),
-    ("Marketing / Ads", [
-        ("Ad spend", "Ad Spend", "inr"),
-        ("Ad Spends", "Ad Spend (WBR)", "inr"),
-        ("ACOS", "ACOS", "pct"),
-        ("SP Spend%", "SP Spend %", "pct"),
-    ]),
-    ("Deals & Promotions", [
-        ("Deal OPS%", "Deal OPS %", "pct"),
-        ("Coupon OPS%", "Coupon OPS %", "pct"),
-        ("BxGy Units coverage", "BxGy Coverage", "pct"),
-        ("BxGy Units share", "BxGy Share", "pct"),
-        ("Total Deal OPS", "Total Deal OPS (WBR)", "inr"),
-        ("BxGy OPS", "BxGy OPS (WBR)", "inr"),
-    ]),
-    ("Operations / Fulfilment", [
-        ("FC units%", "FC Units %", "pct"),
-        ("FBA units%", "FBA Units %", "pct"),
-        ("FC OOS GV%", "FC OOS %", "pct"),
-        ("EF OOS GV%", "EF OOS %", "pct"),
-        ("Overall OOS GV%", "Overall OOS %", "pct"),
-        ("SCR", "SCR", "num"),
-        ("RIS%", "RIS %", "pct"),
-        ("Prime OPS", "Prime OPS (WBR)", "inr"),
-    ]),
-]
+# ── Format hints keyed by exact metric name as it appears in Excel ──
+ROW_FMT = {
+    'GMS': 'inr', 'New Buyable GMS': 'inr', 'New Buyable FBA GMS': 'inr',
+    'OPS': 'inr', 'OPS to GMS conversion': 'pct', 'ASP': 'inr',
+    'Buyable offers': 'num', 'New Buyable offers': 'num', 'New Buyable FBA offers': 'num',
+    'FC offers': 'num', 'FTAC offers': 'num', 'Flex offers': 'num',
+    'FBA offers': 'num', 'AWAS': 'num', 'FC FTAC': 'num', 'Flex FTAC': 'num',
+    'FBA BB GV': 'num', 'FC BB GV': 'num', 'BB GV': 'num',
+    'FBA BB GV%': 'pct', 'FC BB GV%': 'pct',
+    'Conversion %': 'pct', 'Comp GV': 'num', 'Total GV': 'num',
+    'ICPC%': 'pct',
+    'RIS Units': 'num', 'Total Units': 'num', 'RIS%': 'pct',
+    'IXD IB': 'num', 'FC IB': 'num', 'IXD IB%': 'pct',
+    'BxGy Eligible Units': 'num', 'BxGy Promo Units': 'num',
+    'BxGy Units coverage': 'pct', 'BxGy Units share': 'pct',
+    'Deal OPS': 'inr', 'Coupon OPS': 'inr',
+    'Deal OPS%': 'pct', 'Coupon OPS%': 'pct',
+    'FC units': 'num', 'FBA units': 'num', 'Total units': 'num',
+    'FC units%': 'pct', 'FBA units%': 'pct',
+    'Buyable offers T7D': 'num', 'FC offers T7D': 'num', 'FTAC offers T7D': 'num',
+    'Flex offers T7D': 'num', 'FBA offers T7D': 'num', 'AWAS T7D': 'num',
+    'SCR': 'num',
+    'QD GV': 'num', 'QD GV%': 'pct',
+    'NCEMI GV': 'num', 'NCEMI%': 'pct',
+    'Clicks': 'num',
+    'Ad spend': 'inr', 'Attributed sales': 'inr',
+    'ACOS': 'pct', 'SP Spend%': 'pct',
+    'HT OPS': 'inr', 'MFN HIT OPS': 'inr',
+    'FC OOS GV': 'num', 'EF OOS GV': 'num', 'Overall OOS GV': 'num',
+    'Overall Instock GV': 'num',
+    'FC OOS GV%': 'pct', 'EF OOS GV%': 'pct', 'Overall OOS GV%': 'pct',
+}
+
+BAD_HIGH_METRICS = {
+    'ACOS', 'FC OOS GV%', 'EF OOS GV%', 'Overall OOS GV%',
+    'FC OOS GV', 'EF OOS GV', 'Overall OOS GV', 'SCR',
+}
 
 def fmt_cell(val, fmt_type):
     if val is None:
@@ -309,7 +373,7 @@ def trend_icon(unified, metric_key, higher_is_good=True):
         icon = '—'
     return f'<span style="color:{color};font-weight:700">{icon}</span>'
 
-def generate_html(unified):
+def generate_html(unified, ly_unified, positional, ly_positional, master_rows):
     all_weeks = sorted(set(wk for m_vals in unified.values() for wk in m_vals.keys()))
     latest_wk = max(all_weeks) if all_weeks else 15
     latest_date = WEEK_DATES.get(latest_wk, f"Week {latest_wk}")
@@ -353,54 +417,74 @@ def generate_html(unified):
         v = unified.get(metric) or unified.get("Served GMS") if metric == "GMS" else unified.get(metric)
         kpi_html += kpi(label, metric, fmt, hig)
 
-    # ── Build scrollable data table ──
+    # ── Build scrollable data table (all rows from Excel, in order) ──
     week_headers = "".join(
         f'<th class="wk-header">Wk {wk}<br><span class="wk-date">{WEEK_DATES.get(wk,"")}</span></th>'
         for wk in all_weeks
     )
 
+    def infer_fmt(name):
+        """Infer format type from metric name."""
+        return ROW_FMT.get(name, 'num')
+
+    def row_trend_icon(row_idx, name, pos_data):
+        """Trend icon based on positional data across weeks."""
+        wk_vals = [(wk, pos_data.get(row_idx, {}).get(wk)) for wk in all_weeks]
+        wk_vals = [(wk, v) for wk, v in wk_vals if v is not None]
+        td = trend_direction(wk_vals[-4:])
+        hig = name not in BAD_HIGH_METRICS
+        if td == 'up':
+            color = '#22c55e' if hig else '#ef4444'; icon = '▲'
+        elif td == 'down':
+            color = '#ef4444' if hig else '#22c55e'; icon = '▼'
+        else:
+            color = '#94a3b8'; icon = '—'
+        return f'<span style="color:{color};font-weight:700">{icon}</span>'
+
     table_rows = ""
-    for group_name, metrics in METRIC_GROUPS:
-        table_rows += f'<tr class="group-header"><td colspan="{len(all_weeks)+2}">{group_name}</td></tr>'
-        for metric_key, display_name, fmt in metrics:
-            if metric_key not in unified:
-                continue
-            cells = ""
-            vals_in_range = []
-            for wk in all_weeks:
-                val = unified[metric_key].get(wk)
-                vals_in_range.append(val)
+    for row_meta in master_rows:
+        ri      = row_meta['idx']
+        sr_no   = row_meta['sr_no']
+        name    = row_meta['name']
+        fmt     = infer_fmt(name)
+        is_sub  = (sr_no is None)   # sub-rows have no Sr. No
+        bad_high = name in BAD_HIGH_METRICS
 
-            # Color-code cells: green = good, red = bad
-            numeric_vals = [v for v in vals_in_range if v is not None]
-            if numeric_vals:
-                mn, mx = min(numeric_vals), max(numeric_vals)
-            else:
-                mn, mx = 0, 1
+        vals_in_range = [positional.get(ri, {}).get(wk) for wk in all_weeks]
 
-            bad_high = metric_key in ('ACOS', 'FC OOS GV%', 'EF OOS GV%', 'Overall OOS GV%')
+        numeric_vals = [v for v in vals_in_range if v is not None]
+        mn = min(numeric_vals) if numeric_vals else 0
+        mx = max(numeric_vals) if numeric_vals else 1
 
-            for i, (wk, val) in enumerate(zip(all_weeks, vals_in_range)):
-                is_latest = (wk == latest_wk)
-                cell_style = "font-weight:700;" if is_latest else ""
-                heat = ""
-                if val is not None and mx != mn:
-                    ratio = (val - mn) / (mx - mn)
-                    if bad_high:
-                        ratio = 1 - ratio
-                    r = int(255 - ratio * 80)
-                    g = int(175 + ratio * 80)
-                    b = 175
-                    heat = f"background:rgba({255-int(ratio*60)},{175+int(ratio*60)},175,0.25);"
-                formatted = fmt_cell(val, fmt)
-                cells += f'<td style="{cell_style}{heat}">{formatted}</td>'
+        cells = ""
+        for wk, val in zip(all_weeks, vals_in_range):
+            is_latest = (wk == latest_wk)
+            cell_style = "font-weight:700;" if is_latest else ""
+            heat = ""
+            if val is not None and mx != mn:
+                ratio = (val - mn) / (mx - mn)
+                if bad_high:
+                    ratio = 1 - ratio
+                heat = f"background:rgba({255-int(ratio*60)},{175+int(ratio*60)},175,0.25);"
+            formatted = fmt_cell(val, fmt)
+            cells += f'<td style="{cell_style}{heat}">{formatted}</td>'
 
-            icon = trend_icon(unified, metric_key, higher_is_good=(not (metric_key in ('ACOS','FC OOS GV%','EF OOS GV%','Overall OOS GV%'))))
-            table_rows += f'''<tr>
-              <td class="metric-name sticky-col">{display_name}</td>
-              <td class="trend-col">{icon}</td>
-              {cells}
-            </tr>'''
+        icon = row_trend_icon(ri, name, positional)
+
+        # Visual distinction: Sr. No rows bold, sub-rows indented+lighter
+        if is_sub:
+            name_style = "padding-left:28px;color:#64748b;font-size:12px;"
+        else:
+            name_style = "font-weight:600;color:#1e293b;"
+
+        sr_disp = str(int(sr_no)) if sr_no is not None else ""
+        table_rows += f'''<tr class="{'sub-row' if is_sub else 'main-row'}">
+          <td class="metric-name sticky-col" style="{name_style}">
+            {'<span class="sr-badge">'+sr_disp+'</span> ' if sr_disp else ''}{name}
+          </td>
+          <td class="trend-col">{icon}</td>
+          {cells}
+        </tr>'''
 
     # ── Trend narrative ──
     def get_val(metric, wk):
@@ -625,21 +709,95 @@ def generate_html(unified):
         vals = get_recent_values(unified, key, 2)
         cur = vals[-1][1] if vals else None
         prev = vals[-2][1] if len(vals) >= 2 else None
+        # LY value for the latest week
+        ly_val = ly_unified.get(key, {}).get(latest_wk)
         display = fmt_cell(cur, fmt)
+
+        badges = []
         if cur is not None and prev is not None and prev != 0:
             chg = (cur - prev) / abs(prev) * 100
             sign = '+' if chg >= 0 else ''
             bad_high = key in ('ACOS', 'Overall OOS GV%')
             up_good = (chg >= 0) != bad_high
             chg_color = '#22c55e' if up_good else '#ef4444'
-            chg_html = f'<div style="font-size:11px;color:{chg_color};margin-top:2px">{sign}{chg:.1f}% WoW</div>'
-        else:
-            chg_html = ''
+            badges.append(f'<div style="font-size:11px;color:{chg_color};margin-top:2px">{sign}{chg:.1f}% WoW</div>')
+        if cur is not None and ly_val is not None and ly_val != 0:
+            yoy = (cur - ly_val) / abs(ly_val) * 100
+            sign = '+' if yoy >= 0 else ''
+            bad_high = key in ('ACOS', 'Overall OOS GV%')
+            up_good = (yoy >= 0) != bad_high
+            yoy_color = '#22c55e' if up_good else '#ef4444'
+            badges.append(f'<div style="font-size:11px;color:{yoy_color};margin-top:2px">{sign}{yoy:.1f}% YoY <span style="color:#94a3b8">(LY: {fmt_cell(ly_val, fmt)})</span></div>')
+
         summary_cards += f'''<div class="sum-card">
           <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em">{label}</div>
           <div style="font-size:18px;font-weight:700;color:#1e293b;margin-top:4px">{display}</div>
-          {chg_html}
+          {''.join(badges)}
         </div>'''
+
+    # ── YoY comparison table ──
+    yoy_compare_metrics = [
+        ("GMS", "GMS", "inr", False),
+        ("OPS", "OPS", "inr", False),
+        ("Served Units", "Served Units", "num", False),
+        ("ASP", "ASP", "inr", False),
+        ("Conversion %", "Conversion %", "pct", False),
+        ("ICPC%", "IC Box PC %", "pct", False),
+        ("Total GV", "Total GV", "num", False),
+        ("FBA BB GV%", "FBA BB GV%", "pct", False),
+        ("Ad spend", "Ad Spend", "inr", True),
+        ("ACOS", "ACOS", "pct", True),
+        ("Overall OOS GV%", "Overall OOS %", "pct", True),
+        ("Buyable offers", "Buyable Offers", "num", False),
+        ("FBA offers", "FBA Offers", "num", False),
+        ("Buyable Selection", "Buyable Selection", "num", False),
+        ("Prime OPS", "Prime OPS", "inr", False),
+        ("Total Deal OPS", "Total Deal OPS", "inr", False),
+        ("BxGy OPS", "BxGy OPS", "inr", False),
+    ]
+    yoy_rows_html = ""
+    for key, label, fmt, bad_high in yoy_compare_metrics:
+        cur_vals = get_recent_values(unified, key, 1)
+        cur = cur_vals[-1][1] if cur_vals else None
+        ly  = ly_unified.get(key, {}).get(latest_wk)
+        if cur is None and ly is None:
+            continue
+        cur_disp = fmt_cell(cur, fmt)
+        ly_disp  = fmt_cell(ly, fmt)
+        if cur is not None and ly is not None and ly != 0:
+            yoy = (cur - ly) / abs(ly) * 100
+            sign = '+' if yoy >= 0 else ''
+            up_good = (yoy >= 0) != bad_high
+            yoy_color = '#22c55e' if up_good else '#ef4444'
+            arrow = '▲' if yoy >= 0 else '▼'
+            yoy_disp = f'<span style="color:{yoy_color};font-weight:700">{arrow} {sign}{yoy:.1f}%</span>'
+        else:
+            yoy_disp = '—'
+        yoy_rows_html += f'''<tr>
+          <td style="text-align:left;padding:9px 14px;font-weight:500;color:#374151;border-bottom:1px solid #f1f5f9">{label}</td>
+          <td style="text-align:center;padding:9px 14px;font-weight:700;color:#1e293b;border-bottom:1px solid #f1f5f9">{cur_disp}</td>
+          <td style="text-align:center;padding:9px 14px;color:#64748b;border-bottom:1px solid #f1f5f9">{ly_disp}</td>
+          <td style="text-align:center;padding:9px 14px;border-bottom:1px solid #f1f5f9">{yoy_disp}</td>
+        </tr>'''
+
+    yoy_table_html = f'''<div style="background:white;border-radius:10px;padding:20px;margin-bottom:20px;box-shadow:0 1px 4px rgba(0,0,0,0.06);border:1px solid #e2e8f0;">
+      <div style="font-size:14px;font-weight:700;margin-bottom:14px;color:#1e293b">📅 Week {latest_wk} — Year-on-Year Comparison (WK{latest_wk} CY vs WK{latest_wk} LY)</div>
+      <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:#f1f5f9;">
+            <th style="text-align:left;padding:10px 14px;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Metric</th>
+            <th style="text-align:center;padding:10px 14px;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Wk {latest_wk} CY (2026)</th>
+            <th style="text-align:center;padding:10px 14px;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Wk {latest_wk} LY (2025)</th>
+            <th style="text-align:center;padding:10px 14px;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">YoY Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {yoy_rows_html}
+        </tbody>
+      </table>
+      </div>
+    </div>'''
 
     # ── Full HTML ──
     now = datetime.now().strftime("%d %b %Y, %H:%M")
@@ -679,8 +837,11 @@ def generate_html(unified):
   .trend-col {{ min-width: 40px; text-align:center; }}
   td {{ padding: 8px 12px; border-bottom: 1px solid #f1f5f9; text-align: center; white-space: nowrap; }}
   td.metric-name {{ text-align: left; border-right: 1px solid #e2e8f0; }}
-  tr:hover td {{ background: rgba(99,102,241,0.04); }}
+  tr.main-row:hover td {{ background: rgba(99,102,241,0.05); }}
+  tr.sub-row td {{ border-bottom: 1px solid #f8fafc; }}
+  tr.sub-row:hover td {{ background: rgba(99,102,241,0.02); }}
   .group-header td {{ background: #f1f5f9; color: #475569; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 6px 12px; }}
+  .sr-badge {{ display:inline-block; background:#e2e8f0; color:#64748b; font-size:10px; font-weight:700; border-radius:3px; padding:1px 5px; margin-right:4px; }}
 
   /* TRENDS */
   .trends-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }}
@@ -785,6 +946,9 @@ def generate_html(unified):
       {'Key risk this week is <strong>elevated ACOS</strong> and <strong>OOS</strong> requiring immediate action.' if (acos_vals and acos_vals[-1][1] and acos_vals[-1][1]>0.4) or (oos_vals and oos_vals[-1][1] and oos_vals[-1][1]>0.08) else 'Operations appear stable — focus on scaling GMS through improved conversion and selection expansion.'}
     </p>
   </div>
+
+  {yoy_table_html}
+
   {actions_html}
 </div>
 
@@ -804,12 +968,14 @@ def generate_html(unified):
 
 if __name__ == '__main__':
     print("Building unified weekly dataset...")
-    unified = build_weekly_data()
-    print(f"Metrics extracted: {len(unified)}")
+    unified, ly_unified, positional, ly_positional, master_rows = build_weekly_data()
+    print(f"Metrics extracted (name-keyed): {len(unified)}")
     print(f"Weeks covered: {sorted(set(wk for m in unified.values() for wk in m))}")
+    print(f"LY metrics available: {len(ly_unified)}")
+    print(f"Total table rows (Excel order): {len(master_rows)}")
 
     print("Generating HTML...")
-    html = generate_html(unified)
+    html = generate_html(unified, ly_unified, positional, ly_positional, master_rows)
 
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'amazon_mis.html')
     with open(out_path, 'w', encoding='utf-8') as f:
