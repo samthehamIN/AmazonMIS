@@ -26,6 +26,30 @@ WEEK_DATES = {
     14: "2026-04-04",
     15: "2026-04-11",
     16: "2026-04-18",
+    17: "2026-04-25",
+}
+
+# ──────────────────────────────────────────────
+# WBR → SCORECARD METRIC NAME ALIASES
+# (WBR Summary files use different names than scorecard files)
+# ──────────────────────────────────────────────
+WBR_ALIASES = {
+    'Served GMS':    'GMS',
+    'S3P Served GMS': 'GMS',
+    'Total OPS':     'OPS',
+    'GV Conversion': 'Conversion %',
+    'IC Box PC':     'ICPC%',
+    'Ad Spends':     'Ad spend',
+    'Ad Spend':      'Ad spend',
+    'SoROOS':        'Overall OOS GV%',
+    'Buyable Selection': 'Buyable offers',
+    'FC Buyable Selection': 'FC offers',
+    'FBA Buyable Selection': 'FBA offers',
+    'AWAGV':         'AWAS',
+    'Prime OPS':     'Prime OPS',
+    'Total Deal OPS': 'Total Deal OPS',
+    'BxGy OPS':      'BxGy OPS',
+    'Coupon OPS':    'Coupon OPS',
 }
 
 # ──────────────────────────────────────────────
@@ -36,6 +60,13 @@ def safe_float(v):
     try:
         if v is None or v == '' or v == '#DIV/0!':
             return None
+        if isinstance(v, str):
+            v = v.strip()
+            if v.endswith('%'):
+                # Convert "77.86%" → 0.7786 to match scorecard decimal format
+                return float(v[:-1]) / 100
+            if v.replace(',', '').replace('.', '').replace('-', '').isdigit():
+                return float(v.replace(',', ''))
         return float(v)
     except (ValueError, TypeError):
         return None
@@ -245,8 +276,13 @@ def build_weekly_data():
             metrics = parse_wbr(f)
             if metrics:
                 for m, wk_vals in metrics.items():
+                    # Apply alias: map WBR metric name → scorecard metric name
+                    canonical = WBR_ALIASES.get(m, m)
                     for wk, val in wk_vals.items():
-                        merge_name(unified, m, wk, val)
+                        merge_name(unified, canonical, wk, val)
+                        # Also store under the original WBR name so nothing is lost
+                        if canonical != m:
+                            merge_name(unified, m, wk, val)
         else:
             _, metrics, ly_metrics, ordered_rows = parse_scorecard(f)
             for m, wk_vals in metrics.items():
@@ -267,6 +303,23 @@ def build_weekly_data():
             # Set master_rows from the latest file
             if f == latest_file:
                 master_rows = ordered_rows
+
+    # ── Back-fill positional table for WBR-only weeks ──
+    # WBR files don't populate positional (no row indices). After all files are
+    # processed, copy unified week data into positional for any week that has
+    # unified values but no positional data, using master_rows as the index.
+    all_unified_weeks = set(wk for m_vals in unified.values() for wk in m_vals)
+    all_positional_weeks = set(wk for ri_vals in positional.values() for wk in ri_vals)
+    wbr_only_weeks = all_unified_weeks - all_positional_weeks
+    if wbr_only_weeks and master_rows:
+        print(f"Back-filling positional table for WBR-only weeks: {sorted(wbr_only_weeks)}")
+        for row_meta in master_rows:
+            ri   = row_meta['idx']
+            name = row_meta['name']
+            for wk in wbr_only_weeks:
+                val = unified.get(name, {}).get(wk)
+                if val is not None:
+                    merge_pos(positional, ri, wk, val)
 
     return unified, ly_unified, positional, ly_positional, master_rows
 
