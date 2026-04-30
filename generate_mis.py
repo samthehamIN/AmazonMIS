@@ -396,6 +396,54 @@ BAD_HIGH_METRICS = {
     'FC OOS GV', 'EF OOS GV', 'Overall OOS GV', 'SCR',
 }
 
+# ── Ideal range targets (strict) ──
+# Each entry: ('min', threshold) | ('max', threshold) | ('range', lo, hi)
+IDEAL_RANGES = {
+    'OPS to GMS conversion': ('min',  0.92,  '>92%'),
+    'FBA BB GV%':            ('min',  0.70,  '>70%'),
+    'FC BB GV%':             ('min',  0.70,  '>70%'),
+    'Conversion %':          ('min',  0.035, '>3.5%'),
+    'ICPC%':                 ('min',  0.85,  '>85%'),
+    'RIS%':                  ('min',  0.80,  '>80%'),
+    'IXD IB%':               ('max',  0.02,  '<2%'),
+    'BxGy Units coverage':   ('min',  0.95,  '>95%'),
+    'BxGy Units share':      ('min',  0.12,  '>12%'),
+    'Deal OPS%':             ('min',  0.08,  '>8%'),
+    'Coupon OPS%':           ('min',  0.08,  '>8%'),
+    'FC units%':             ('min',  0.80,  '>80%'),
+    'FBA units%':            ('min',  0.85,  '>85%'),
+    'SCR':                   ('max',  5,     '<5'),
+    'ACOS':                  ('max',  0.35,  '<35%'),
+    'SP Spend%':             ('range',0.15,  0.18, '15–18%'),
+    'FC OOS GV%':            ('max',  0.03,  '<3%'),
+    'EF OOS GV%':            ('max',  0.08,  '<8%'),
+    'Overall OOS GV%':       ('max',  0.05,  '<5%'),
+}
+
+def ideal_label(name):
+    """Return display label for the ideal range, or '—'."""
+    r = IDEAL_RANGES.get(name)
+    if not r:
+        return '—'
+    return r[-1]   # last element is always the label string
+
+def ideal_status(name, val):
+    """Return True (good), False (bad), or None (no target / missing val)."""
+    r = IDEAL_RANGES.get(name)
+    if not r or val is None:
+        return None
+    try:
+        v = float(val)
+        if r[0] == 'min':
+            return v >= r[1]
+        if r[0] == 'max':
+            return v <= r[1]
+        if r[0] == 'range':
+            return r[1] <= v <= r[2]
+    except (TypeError, ValueError):
+        pass
+    return None
+
 def fmt_cell(val, fmt_type):
     if val is None:
         return '—'
@@ -473,7 +521,7 @@ def generate_html(unified, ly_unified, positional, ly_positional, master_rows):
 
     # ── Build scrollable data table (all rows from Excel, in order) ──
     week_headers = "".join(
-        f'<th class="wk-header">Wk {wk}<br><span class="wk-date">{WEEK_DATES.get(wk,"")}</span></th>'
+        f'<th class="wk-header{"  latest-wk-header" if wk == latest_wk else ""}">Wk {wk}<br><span class="wk-date">{WEEK_DATES.get(wk,"")}</span></th>'
         for wk in all_weeks
     )
 
@@ -497,35 +545,66 @@ def generate_html(unified, ly_unified, positional, ly_positional, master_rows):
 
     table_rows = ""
     for row_meta in master_rows:
-        ri      = row_meta['idx']
-        sr_no   = row_meta['sr_no']
-        name    = row_meta['name']
-        fmt     = infer_fmt(name)
-        is_sub  = (sr_no is None)   # sub-rows have no Sr. No
+        ri       = row_meta['idx']
+        sr_no    = row_meta['sr_no']
+        name     = row_meta['name']
+        fmt      = infer_fmt(name)
+        is_sub   = (sr_no is None)
         bad_high = name in BAD_HIGH_METRICS
+        has_ideal = name in IDEAL_RANGES
 
         vals_in_range = [positional.get(ri, {}).get(wk) for wk in all_weeks]
+        latest_val    = positional.get(ri, {}).get(latest_wk)
+        latest_status = ideal_status(name, latest_val)   # True/False/None
 
-        numeric_vals = [v for v in vals_in_range if v is not None]
-        mn = min(numeric_vals) if numeric_vals else 0
-        mx = max(numeric_vals) if numeric_vals else 1
+        # ── Ideal Range cell ──
+        lbl = ideal_label(name)
+        if lbl == '—':
+            ideal_cell = '<td class="ideal-col" style="color:#94a3b8;font-size:11px;">—</td>'
+        else:
+            if latest_status is True:
+                ideal_cell = f'<td class="ideal-col" style="color:#15803d;font-weight:600;font-size:11px;">{lbl}</td>'
+            elif latest_status is False:
+                ideal_cell = f'<td class="ideal-col" style="color:#b91c1c;font-weight:600;font-size:11px;">{lbl}</td>'
+            else:
+                ideal_cell = f'<td class="ideal-col" style="color:#64748b;font-size:11px;">{lbl}</td>'
 
+        # ── Data cells ──
         cells = ""
         for wk, val in zip(all_weeks, vals_in_range):
             is_latest = (wk == latest_wk)
-            cell_style = "font-weight:700;" if is_latest else ""
-            heat = ""
-            if val is not None and mx != mn:
-                ratio = (val - mn) / (mx - mn)
-                if bad_high:
-                    ratio = 1 - ratio
-                heat = f"background:rgba({255-int(ratio*60)},{175+int(ratio*60)},175,0.25);"
-            formatted = fmt_cell(val, fmt)
-            cells += f'<td style="{cell_style}{heat}">{formatted}</td>'
+            status    = ideal_status(name, val) if has_ideal else None
+
+            if has_ideal and val is not None:
+                # Colour by ideal range
+                if status is True:
+                    if is_latest:
+                        bg = "background:#bbf7d0;"   # strong green for latest
+                    else:
+                        bg = "background:#dcfce7;"   # soft green for history
+                else:
+                    if is_latest:
+                        bg = "background:#fecaca;"   # strong red for latest
+                    else:
+                        bg = "background:#fee2e2;"   # soft red for history
+            else:
+                # Fall back to relative heat-map for non-targeted metrics
+                numeric_vals = [v for v in vals_in_range if v is not None]
+                mn = min(numeric_vals) if numeric_vals else 0
+                mx = max(numeric_vals) if numeric_vals else 1
+                bg = ""
+                if val is not None and mx != mn:
+                    ratio = (val - mn) / (mx - mn)
+                    if bad_high:
+                        ratio = 1 - ratio
+                    bg = f"background:rgba({255-int(ratio*60)},{175+int(ratio*60)},175,0.20);"
+
+            fw = "font-weight:700;" if is_latest else ""
+            border = "border-left:2px solid #94a3b8;" if is_latest else ""
+            cells += f'<td style="{fw}{bg}{border}">{fmt_cell(val, fmt)}</td>'
 
         icon = row_trend_icon(ri, name, positional)
 
-        # Visual distinction: Sr. No rows bold, sub-rows indented+lighter
         if is_sub:
             name_style = "padding-left:28px;color:#64748b;font-size:12px;"
         else:
@@ -537,6 +616,7 @@ def generate_html(unified, ly_unified, positional, ly_positional, master_rows):
             {'<span class="sr-badge">'+sr_disp+'</span> ' if sr_disp else ''}{name}
           </td>
           <td class="trend-col">{icon}</td>
+          {ideal_cell}
           {cells}
         </tr>'''
 
@@ -886,6 +966,8 @@ def generate_html(unified, ly_unified, positional, ly_positional, master_rows):
   table {{ border-collapse: collapse; width: 100%; font-size: 12.5px; }}
   thead th {{ background: #1e293b; color: white; padding: 10px 12px; text-align: center; white-space: nowrap; position: sticky; top: 0; z-index: 10; }}
   thead th.wk-header {{ min-width: 90px; }}
+  thead th.latest-wk-header {{ background: #1e3a5f; border-left: 2px solid #94a3b8; border-right: 2px solid #94a3b8; }}
+  td.ideal-col {{ min-width: 72px; text-align: center; border-right: 1px solid #e2e8f0; }}
   .wk-date {{ font-size: 10px; color: #94a3b8; font-weight: 400; }}
   .sticky-col {{ position: sticky; left: 0; background: #f8fafc; z-index: 5; font-weight: 500; color: #374151; min-width: 180px; }}
   .trend-col {{ min-width: 40px; text-align:center; }}
@@ -960,6 +1042,7 @@ def generate_html(unified, ly_unified, positional, ly_positional, master_rows):
         <tr>
           <th class="sticky-col" style="text-align:left;position:sticky;left:0;z-index:15;background:#1e293b">Metric</th>
           <th style="min-width:40px">Trend</th>
+          <th style="min-width:80px;font-size:11px;letter-spacing:0.04em;background:#1e3a5f;color:#93c5fd;">Ideal range</th>
           {week_headers}
         </tr>
       </thead>
@@ -969,7 +1052,7 @@ def generate_html(unified, ly_unified, positional, ly_positional, master_rows):
     </table>
   </div>
   <div style="font-size:11px;color:#94a3b8;margin-top:8px">
-    🟢 Green = relatively better performance &nbsp;|&nbsp; 🔴 Red = relatively weaker &nbsp;|&nbsp; Trend: ▲ rising · ▼ declining · — flat &nbsp;|&nbsp; Heat map is relative within each metric row.
+    🟢 Green cell = meeting strict ideal target &nbsp;|&nbsp; 🔴 Red cell = below target &nbsp;|&nbsp; Metrics without a target use a relative heat map &nbsp;|&nbsp; Trend: ▲ rising · ▼ declining · — flat &nbsp;|&nbsp; Ideal range column colour reflects latest week status.
   </div>
 </div>
 
